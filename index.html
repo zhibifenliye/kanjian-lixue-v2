@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看见力学 · 梁的弯曲</title>
+<style>
+  :root{
+    --surface-1:#fcfcfb; --page:#f9f9f7;
+    --text-primary:#0b0b0b; --text-secondary:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.10);
+    --series-v:#2a78d6; --series-m:#eb6834; --series-w:#1baf7a;
+    --good:#0ca30c; --warning:#fab219; --critical:#d03b3b;
+    --font: system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--text-primary);font-family:var(--font);font-size:14px;line-height:1.6}
+  header{background:var(--surface-1);border-bottom:1px solid var(--border);padding:14px 22px;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  header h1{margin:0;font-size:17px;font-weight:650;letter-spacing:.01em}
+  header .sub{color:var(--muted);font-size:12.5px}
+  .wrap{display:grid;grid-template-columns:290px 1fr;gap:18px;padding:18px 22px 40px;max-width:1560px;margin:0 auto}
+  @media(max-width:1000px){.wrap{grid-template-columns:1fr}}
+  .panel{background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:16px 16px 8px;align-self:start;position:sticky;top:18px}
+  .panel h2{margin:0 0 12px;font-size:12px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .grp{margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--grid)}
+  .grp:last-child{border-bottom:none}
+  .grp label{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;color:var(--text-secondary);margin-bottom:5px}
+  .grp label b{font-weight:600;color:var(--text-primary);font-variant-numeric:tabular-nums;font-size:13px}
+  input[type=range]{width:100%;accent-color:var(--series-v);height:18px;margin:0}
+  select,button{font-family:var(--font);font-size:13px;border-radius:7px;border:1px solid var(--border);background:var(--surface-1);color:var(--text-primary);padding:6px 9px;cursor:pointer}
+  select{width:100%}
+  .seg{display:flex;gap:6px}
+  .seg button{flex:1;padding:7px 4px;font-size:12.5px}
+  .seg button[aria-pressed=true]{background:var(--series-v);border-color:var(--series-v);color:#fff;font-weight:600}
+  .charts{display:flex;flex-direction:column;gap:14px;min-width:0}
+  .card{background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:10px 12px 6px}
+  #plot{width:100%;height:790px}
+  .hint{color:var(--muted);font-size:12px;margin:6px 2px 2px}
+  .verify{background:var(--surface-1);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+  .verify h3{margin:0 0 4px;font-size:13.5px;font-weight:650}
+  .verify .lead{color:var(--muted);font-size:12px;margin:0 0 10px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--grid)}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;letter-spacing:.03em;text-transform:uppercase}
+  td.num{font-variant-numeric:tabular-nums;text-align:right}
+  .tag{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:20px;border:1px solid transparent}
+  .tag.ok{color:#0a7a0a;background:rgba(12,163,12,.10);border-color:rgba(12,163,12,.28)}
+  .tag.warn{color:#8a5b00;background:rgba(250,178,25,.16);border-color:rgba(250,178,25,.40)}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--text-secondary);margin:2px 0 0}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>看见力学 · 梁的弯曲</h1>
+  <span class="sub">拖滑块，实时看荷载 → 内力 → 变形的全链条　|　原型版</span>
+</header>
+
+<div class="wrap">
+
+  <aside class="panel">
+    <h2>支承与材料</h2>
+    <div class="grp">
+      <label>支承方式</label>
+      <div class="seg">
+        <button id="btn-simple" aria-pressed="true">简支梁</button>
+        <button id="btn-cant" aria-pressed="false">悬臂梁</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <label>材料 <b id="out-mat">钢</b></label>
+      <select id="sel-mat">
+        <option value="200" selected>钢　E = 200 GPa</option>
+        <option value="70">铝合金　E = 70 GPa</option>
+        <option value="30">混凝土　E = 30 GPa</option>
+        <option value="10">木材　E = 10 GPa</option>
+      </select>
+    </div>
+
+    <div class="grp">
+      <label>跨度 L <b><span id="out-L">3.00</span> m</b></label>
+      <input type="range" id="rng-L" min="1" max="8" step="0.1" value="3">
+    </div>
+
+    <h2>矩形截面</h2>
+    <div class="grp">
+      <label>宽 b <b><span id="out-b">150</span> mm</b></label>
+      <input type="range" id="rng-b" min="50" max="400" step="10" value="150">
+      <label style="margin-top:8px">高 h <b><span id="out-h">250</span> mm</b></label>
+      <input type="range" id="rng-h" min="50" max="600" step="10" value="250">
+      <div class="hint">I = bh³/12 = <span id="out-I">195</span> ×10⁻⁶ m⁴</div>
+    </div>
+
+    <h2>荷载</h2>
+    <div class="grp">
+      <label>集中力 P <b><span id="out-P">1000</span> N</b></label>
+      <input type="range" id="rng-P" min="0" max="5000" step="50" value="1000">
+      <label style="margin-top:8px">作用位置 a <b><span id="out-a">1.50</span> m</b></label>
+      <input type="range" id="rng-a" min="0" max="1" step="0.01" value="0.5">
+    </div>
+
+    <div class="grp">
+      <label>均布荷载 q <b><span id="out-q">0</span> N/m</b></label>
+      <input type="range" id="rng-q" min="0" max="5000" step="50" value="0">
+      <label style="margin-top:8px">起止 <b><span id="out-udl">全长</span></b></label>
+      <input type="range" id="rng-u1" min="0" max="1" step="0.01" value="0">
+      <input type="range" id="rng-u2" min="0" max="1" step="0.01" value="1" style="margin-top:4px">
+    </div>
+  </aside>
+
+  <section class="charts">
+    <div class="card">
+      <div id="plot"></div>
+      <div class="legend">
+        <span><i style="background:var(--series-v)"></i>剪力 V</span>
+        <span><i style="background:var(--series-m)"></i>弯矩 M</span>
+        <span><i style="background:var(--series-w)"></i>挠度 w</span>
+        <span style="color:var(--muted)">约定：荷载向下为正 · 弯矩下缘受拉为正 · 挠度向下为正</span>
+      </div>
+    </div>
+
+    <div class="verify">
+      <h3>双路互验 · 独立求解路径比对</h3>
+      <p class="lead">
+        路径 A：有限元位移法 → 曲率 M = −EI·w″　　路径 B：静力平衡积分 → M
+      </p>
+      <table>
+        <thead>
+          <tr><th>工况</th><th style="text-align:right">数值解</th><th style="text-align:right">理论解</th><th style="text-align:right">偏差</th><th>判定</th></tr>
+        </thead>
+        <tbody id="vbody"></tbody>
+      </table>
+      <p class="hint" id="vhint"></p>
+    </div>
+  </section>
+</div>
+
+<script src="lib/plotly.min.js"></script>
+<script>
+/* ============================================================
+   一、力学计算内核
+   约定：x 从左端起；w 向下为正；荷载向下为正；M 下缘受拉为正
+        EI·w⁗ = q（q 向下为正）;  M = −EI·w″;  V = −EI·w‴
+   ============================================================ */
+const BASIS = 40;              // 每个荷载分段细分数
+const G_A = [-0.9061798459386640, -0.5384693101056831, 0,
+              0.5384693101056831,  0.9061798459386640];
+const G_W = [ 0.2369268850561891,  0.4786286704993665, 0.5688888888888889,
+              0.4786286704993665,  0.2369268850561891];
+
+function linspace(a, b, n) {
+  const o = new Float64Array(n);
+  for (let i = 0; i < n; i++) o[i] = a + (b - a) * i / (n - 1);
+  return o;
+}
+function shapeF(xi, Le) {              // Hermite 形函数
+  const x2 = xi * xi, x3 = x2 * xi;
+  return [1 - 3*x2 + 2*x3, Le * (xi - 2*x2 + x3), 3*x2 - 2*x3, Le * (-x2 + x3)];
+}
+
+/* 网格：把荷载突变点设为节点 —— 集中力落在节点上时有限元是节点精确的 */
+function buildMesh(L, loads) {
+  const bp = new Set([0, L]);
+  for (const ld of loads) {
+    const c = v => Math.min(Math.max(v, 0), L);
+    if (ld.type === 'point') bp.add(c(ld.a));
+    else { bp.add(c(ld.a)); bp.add(c(ld.b)); }
+  }
+  const pts = Array.from(bp).sort((x, y) => x - y);
+  const nodes = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const seg = linspace(pts[i], pts[i + 1], BASIS + 1);
+    const last = (i === pts.length - 2);
+    for (let k = 0; k < (last ? seg.length : seg.length - 1); k++) nodes.push(seg[k]);
+  }
+  return nodes;
+}
+
+/* 高斯消元（列主元） */
+function solveLinear(K, F, free) {
+  const n = free.length, A = [];
+  for (let i = 0; i < n; i++) {
+    const row = new Float64Array(n + 1);
+    for (let j = 0; j < n; j++) row[j] = K[free[i]][free[j]];
+    row[n] = F[free[i]];
+    A.push(row);
+  }
+  for (let k = 0; k < n; k++) {
+    let p = k, mx = Math.abs(A[k][k]);
+    for (let i = k + 1; i < n; i++) { const v = Math.abs(A[i][k]); if (v > mx) { mx = v; p = i; } }
+    if (p !== k) { const t = A[k]; A[k] = A[p]; A[p] = t; }
+    const piv = A[k][k];
+    if (Math.abs(piv) < 1e-300) continue;
+    for (let i = k + 1; i < n; i++) {
+      const f = A[i][k] / piv;
+      if (f === 0) continue;
+      for (let j = k; j <= n; j++) A[i][j] -= f * A[k][j];
+    }
+  }
+  const x = new Float64Array(n);
+  for (let i = n - 1; i >= 0; i--) {
+    let s = A[i][n];
+    for (let j = i + 1; j < n; j++) s -= A[i][j] * x[j];
+    x[i] = Math.abs(A[i][i]) < 1e-300 ? 0 : s / A[i][i];
+  }
+  return x;
+}
+
+function solveBeam(L, EI, support, loads) {
+  const xn = buildMesh(L, loads);
+  const nn = xn.length, ne = nn - 1, ndof = 2 * nn;
+  const K = []; for (let i = 0; i < ndof; i++) K.push(new Float64Array(ndof));
+  const F = new Float64Array(ndof);
+
+  /* --- 组装 --- */
+  for (let e = 0; e < ne; e++) {
+    const Le = xn[e + 1] - xn[e], c = EI / (Le * Le * Le);
+    const ke = [
+      [ 12*c,      6*Le*c,    -12*c,     6*Le*c],
+      [ 6*Le*c,  4*Le*Le*c,  -6*Le*c,  2*Le*Le*c],
+      [-12*c,    -6*Le*c,     12*c,    -6*Le*c],
+      [ 6*Le*c,  2*Le*Le*c,  -6*Le*c,  4*Le*Le*c]
+    ];
+    const idx = [2*e, 2*e+1, 2*e+2, 2*e+3];
+    for (let a = 0; a < 4; a++) for (let b = 0; b < 4; b++) K[idx[a]][idx[b]] += ke[a][b];
+
+    /* 分布荷载：按与单元的【半开重叠区间】积分，避免节点处重复计入 */
+    const xa = xn[e], xb = xn[e + 1];
+    for (const ld of loads) {
+      if (ld.type !== 'udl') continue;
+      const lo = Math.max(xa, ld.a), hi = Math.min(xb, ld.b);
+      if (hi <= lo) continue;
+      const f = [0, 0, 0, 0];
+      for (let g = 0; g < 5; g++) {
+        const xm = 0.5 * (lo + hi) + 0.5 * (hi - lo) * G_A[g];
+        const N = shapeF((xm - xa) / Le, Le);
+        const wgt = G_W[g] * 0.5 * (hi - lo) * ld.q;
+        for (let k = 0; k < 4; k++) f[k] += wgt * N[k];
+      }
+      for (let k = 0; k < 4; k++) F[idx[k]] += f[k];
+    }
+  }
+
+  /* 集中荷载：只施加到"包含它"的那一个单元 */
+  for (const ld of loads) {
+    if (ld.type !== 'point') continue;
+    let e = 0;
+    while (e < ne - 1 && xn[e + 1] <= ld.a) e++;
+    const xa = xn[e], Le = xn[e + 1] - xa;
+    const N = shapeF(Le > 0 ? (ld.a - xa) / Le : 0, Le);
+    const idx = [2*e, 2*e+1, 2*e+2, 2*e+3];
+    for (let k = 0; k < 4; k++) F[idx[k]] += ld.P * N[k];
+  }
+
+  /* --- 边界条件 --- */
+  const fixed = support === 'simple' ? [0, ndof - 2] : [0, 1];
+  const free = [];
+  for (let i = 0; i < ndof; i++) if (fixed.indexOf(i) < 0) free.push(i);
+  const d = new Float64Array(ndof);
+  const sol = solveLinear(K, F, free);
+  for (let i = 0; i < free.length; i++) d[free[i]] = sol[i];
+
+  /* --- 后处理 --- */
+  const NX = 601;
+  const xs = linspace(0, L, NX);
+  const w = new Float64Array(NX), Mc = new Float64Array(NX);
+  for (let i = 0; i < NX; i++) {
+    const x = xs[i];
+    let e = 0;
+    while (e < ne - 1 && xn[e + 1] <= x) e++;
+    const xa = xn[e], Le = xn[e + 1] - xa;
+    const xi = Le > 0 ? (x - xa) / Le : 0;
+    const dl = [d[2*e], d[2*e+1], d[2*e+2], d[2*e+3]];
+    const x2 = xi * xi, x3 = x2 * xi;
+    w[i] = (1-3*x2+2*x3)*dl[0] + Le*(xi-2*x2+x3)*dl[1]
+         + (3*x2-2*x3)*dl[2]     + Le*(-x2+x3)*dl[3];
+    const wpp = ((-6 + 12*xi)/(Le*Le))*dl[0] + ((-4 + 6*xi)/Le)*dl[1]
+              + (( 6 - 12*xi)/(Le*Le))*dl[2] + ((-2 + 6*xi)/Le)*dl[3];
+    Mc[i] = -EI * wpp;                      // ← 路径 A：由曲率反推弯矩
+  }
+
+  /* --- 路径 B：静力平衡积分（精确） --- */
+  let RA, MA;
+  if (support === 'simple') {
+    let Msum = 0;
+    for (const ld of loads) {
+      if (ld.type === 'point') Msum += ld.P * (L - ld.a);
+      else {
+        const a = Math.min(ld.a, ld.b), b = Math.max(ld.a, ld.b);
+        Msum += ld.q * (b - a) * (L - 0.5 * (a + b));
+      }
+    }
+    RA = Msum / L; MA = 0;
+  } else {
+    let W = 0, M0 = 0;
+    for (const ld of loads) {
+      if (ld.type === 'point') { W += ld.P; M0 += ld.P * ld.a; }
+      else {
+        const a = Math.min(ld.a, ld.b), b = Math.max(ld.a, ld.b);
+        W += ld.q * (b - a); M0 += ld.q * (b - a) * 0.5 * (a + b);
+      }
+    }
+    RA = W; MA = -M0;
+  }
+  const V = new Float64Array(NX), Ms = new Float64Array(NX);
+  for (let i = 0; i < NX; i++) { V[i] = RA; Ms[i] = MA + RA * xs[i]; }
+  for (const ld of loads) {
+    if (ld.type === 'point') {
+      for (let i = 0; i < NX; i++) if (xs[i] > ld.a + 1e-12) {
+        V[i] -= ld.P; Ms[i] -= ld.P * (xs[i] - ld.a);
+      }
+    } else {
+      const a = Math.min(ld.a, ld.b), b = Math.max(ld.a, ld.b);
+      for (let i = 0; i < NX; i++) {
+        if (xs[i] <= a + 1e-12) continue;
+        const u = Math.min(xs[i], b) - a;
+        V[i]  -= ld.q * u;
+        Ms[i] -= ld.q * (u * (xs[i] - a) - u * u / 2);
+      }
+    }
+  }
+
+  /* 互验：两条路径的最大偏差 / 静力解峰值 */
+  let maxDiff = 0, scale = 0;
+  for (let i = 0; i < NX; i++) {
+    maxDiff = Math.max(maxDiff, Math.abs(Mc[i] - Ms[i]));
+    scale   = Math.max(scale, Math.abs(Ms[i]));
+  }
+  const err = scale > 1e-30 ? maxDiff / scale : 0;
+
+  return { xs, w, V, Ms, err, ne };
+}
+
+/* ============================================================
+   二、绘图
+   ============================================================ */
+const C = { v:'#2a78d6', m:'#eb6834', w:'#1baf7a',
+            grid:'#e1e0d9', axis:'#c3c2b7', muted:'#898781',
+            sec:'#52514e', pri:'#0b0b0b', surf:'#fcfcfb' };
+
+const PLOT_CFG = { responsive:true, displaylogo:false,
+  modeBarButtonsToRemove:['lasso2d','select2d','autoScale2d'],
+  toImageButtonOptions:{ format:'png', scale:2, filename:'看见力学_梁弯曲' } };
+
+/* 支承与荷载示意图 */
+function schematicTraces(L, support, loads) {
+  const tr = [], ann = [], shp = [];
+  const yb = 0.5;                                  // 梁轴线
+  tr.push({ x:[0, L], y:[yb, yb], mode:'lines',
+            line:{ color:C.pri, width:3 }, hoverinfo:'skip', showlegend:false });
+
+  if (support === 'simple') {
+    const g = 0.055 * L;                       // 支座地面线半宽（随跨度缩放）
+    // 铰支座（左）
+    tr.push({ x:[0], y:[yb - 0.26], mode:'markers',
+              marker:{ symbol:'triangle-up', size:20, color:C.sec },
+              hoverinfo:'skip', showlegend:false });
+    tr.push({ x:[0, g], y:[yb - 0.44, yb - 0.44], mode:'lines',
+              line:{ color:C.sec, width:2 }, hoverinfo:'skip', showlegend:false });
+    // 滚动支座（右）
+    tr.push({ x:[L], y:[yb - 0.26], mode:'markers',
+              marker:{ symbol:'triangle-up', size:20, color:C.sec },
+              hoverinfo:'skip', showlegend:false });
+    tr.push({ x:[L - g, L], y:[yb - 0.44, yb - 0.44], mode:'lines',
+              line:{ color:C.sec, width:2 }, hoverinfo:'skip', showlegend:false });
+  } else {
+    shp.push({ type:'line', x0:0, x1:0, y0:yb-0.75, y1:yb+0.6,
+               line:{ color:C.sec, width:3 }, xref:'x', yref:'y' });
+    for (let k = -3; k <= 3; k++) {
+      shp.push({ type:'line', x0:0, x1:-0.16, y0:yb+0.6+k*0.16,
+                 y1:yb+0.42+k*0.16, line:{ color:C.sec, width:1.5 }, xref:'x', yref:'y' });
+    }
+    ann.push({ x:0, y:yb+0.78, text:'固支', showarrow:false,
+               font:{ size:11, color:C.muted }, xanchor:'left', xshift:6 });
+  }
+
+  for (const ld of loads) {
+    if (ld.type === 'point') {
+      ann.push({ x:ld.a, y:yb+0.22, ax:ld.a, ay:yb+1.05,
+                 xref:'x', yref:'y', axref:'x', ayref:'y',
+                 showarrow:true, arrowhead:3, arrowsize:1.3,
+                 arrowwidth:2.5, arrowcolor:C.m, text:'' });
+      ann.push({ x:ld.a, y:yb+1.12, text:'P = ' + ld.P + ' N', showarrow:false,
+                 font:{ size:11.5, color:C.m }, xanchor:'center' });
+    } else {
+      const a = Math.min(ld.a, ld.b), b = Math.max(ld.a, ld.b);
+      const n = Math.max(2, Math.round((b - a) / L * 12));
+      for (let k = 0; k <= n; k++) {
+        const x = a + (b - a) * k / n;
+        ann.push({ x, y:yb+0.22, ax:x, ay:yb+1.05, xref:'x', yref:'y',
+                   axref:'x', ayref:'y', showarrow:true, arrowhead:2,
+                   arrowsize:1, arrowwidth:1.6, arrowcolor:C.v, text:'' });
+      }
+      shp.push({ type:'line', x0:a, x1:b, y0:yb+1.05, y1:yb+1.05,
+                 line:{ color:C.v, width:3 }, xref:'x', yref:'y' });
+      ann.push({ x:(a+b)/2, y:yb+1.22, text:'q = ' + ld.q + ' N/m', showarrow:false,
+                 font:{ size:11.5, color:C.v }, xanchor:'center' });
+    }
+  }
+  return { traces:tr, annotations:ann, shapes:shp };
+}
+
+function buildFigure(res, L, support, loads) {
+  const { xs, w, V, Ms } = res;
+  const xa = Array.from(xs);
+  const sch = schematicTraces(L, support, loads);
+
+  // 极值直接标注（同时满足低对比色槽的"可见标签"要求）
+  const wmm = Array.from(w).map(v => v * 1000);
+  const iM = argmaxAbs(Ms), iV = argmaxAbs(V), iw = argmaxAbs(wmm);
+  const rf = n => (n === 1 ? '' : String(n));      // 第 n 个子图的轴后缀
+  const label = (i, arr, unit, color, n) => ({
+    x: xa[i], y: arr[i], xref:'x' + rf(n), yref:'y' + rf(n),
+    yshift: arr[i] >= 0 ? 16 : -16,
+    text: fmt(arr[i]) + ' ' + unit, showarrow:false,
+    font:{ size:11.5, color },
+    xanchor: i < arr.length * 0.10 ? 'left'
+           : (i > arr.length * 0.90 ? 'right' : 'center'),
+    bgcolor:'rgba(252,252,251,0.85)', borderpad:2
+  });
+
+  const data = [
+    ...sch.traces,
+    { x:xa, y:Array.from(V),  xaxis:'x2', yaxis:'y2', mode:'lines',
+      line:{ color:C.v, width:2 }, name:'剪力 V',
+      hovertemplate:'V = %{y:.1f} N<extra></extra>' },
+    { x:xa, y:Array.from(Ms), xaxis:'x3', yaxis:'y3', mode:'lines',
+      line:{ color:C.m, width:2 }, name:'弯矩 M',
+      hovertemplate:'M = %{y:.1f} N·m<extra></extra>' },
+    { x:xa, y:wmm, xaxis:'x4', yaxis:'y4', mode:'lines',
+      line:{ color:C.w, width:2 }, name:'挠度 w',
+      hovertemplate:'w = %{y:.3f} mm<extra></extra>' }
+  ];
+
+  const axisBase = { showgrid:true, gridcolor:C.grid, gridwidth:1,
+                     zeroline:false, color:C.muted, tickfont:{ size:11 },
+                     linecolor:C.axis, linewidth:1 };
+
+  const layout = {
+    margin:{ l:64, r:26, t:26, b:38 },
+    paper_bgcolor:C.surf, plot_bgcolor:C.surf,
+    font:{ family:'system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif',
+           size:12, color:C.sec },
+    hovermode:'x unified',
+    hoverlabel:{ bgcolor:'#ffffff', bordercolor:C.grid,
+                 font:{ size:12, color:C.pri } },
+    showlegend:false,
+    annotations:[
+      ...sch.annotations,
+      { x:0, y:1.0, xref:'paper', yref:'paper', text:'荷载与支座', showarrow:false,
+        xanchor:'left', font:{ size:11, color:C.muted } },
+      { x:0, y:0.755, xref:'paper', yref:'paper', text:'剪力图 V (N)', showarrow:false,
+        xanchor:'left', font:{ size:11.5, color:C.v } },
+      { x:0, y:0.505, xref:'paper', yref:'paper', text:'弯矩图 M (N·m)', showarrow:false,
+        xanchor:'left', font:{ size:11.5, color:C.m } },
+      { x:0, y:0.255, xref:'paper', yref:'paper', text:'挠曲线 w (mm)', showarrow:false,
+        xanchor:'left', font:{ size:11.5, color:C.w } },
+      label(iV, V,   'N',   C.v, 2),
+      label(iM, Ms,  'N·m', C.m, 3),
+      label(iw, wmm, 'mm',  C.w, 4)
+    ],
+    shapes:[...sch.shapes],
+    xaxis:  { ...axisBase, domain:[0,1], anchor:'y',  showticklabels:false, range:[0, L] },
+    yaxis:  { ...axisBase, domain:[0.79, 0.97], anchor:'x',
+              showticklabels:false, showgrid:false, range:[-0.75, 1.95] },
+    xaxis2: { ...axisBase, domain:[0,1], anchor:'y2', showticklabels:false, matches:'x' },
+    yaxis2: { ...axisBase, domain:[0.545, 0.695], anchor:'x2', nticks:4 },
+    xaxis3: { ...axisBase, domain:[0,1], anchor:'y3', showticklabels:false, matches:'x' },
+    yaxis3: { ...axisBase, domain:[0.30, 0.45], anchor:'x3', nticks:4 },
+    xaxis4: { ...axisBase, domain:[0,1], anchor:'y4', matches:'x',
+              title:{ text:'x (m)', font:{ size:11.5, color:C.muted } } },
+    yaxis4: { ...axisBase, domain:[0.055, 0.205], anchor:'x4', nticks:4 }
+  };
+  return { data, layout };
+}
+
+function fmt(v) {
+  const a = Math.abs(v);
+  if (a === 0)    return '0';
+  if (a >= 10000) return v.toFixed(0);
+  if (a >= 100)   return v.toFixed(1);
+  if (a >= 1)     return v.toFixed(2);
+  if (a >= 0.01)  return v.toFixed(4);
+  if (a >= 1e-4)  return v.toFixed(6);
+  return v.toExponential(2);
+}
+function argmaxAbs(a) {
+  let k = 0, m = -1;
+  for (let i = 0; i < a.length; i++) { const v = Math.abs(a[i]); if (v > m) { m = v; k = i; } }
+  return k;
+}
+
+/* ============================================================
+   三、状态与交互
+   ============================================================ */
+const S = {
+  support:'simple', E:200e9, L:3, b:150, h:250,
+  P:1000, aFrac:0.5, q:0, u1:0, u2:1
+};
+const $ = id => document.getElementById(id);
+const I_of = () => (S.b/1000) * Math.pow(S.h/1000, 3) / 12;   // m⁴
+
+function currentLoads() {
+  const a = S.aFrac * S.L;
+  const u1 = Math.min(S.u1, S.u2) * S.L, u2 = Math.max(S.u1, S.u2) * S.L;
+  const L = [];
+  if (S.P > 0) L.push({ type:'point', P:S.P, a: clamp(a, 0, S.L) });
+  if (S.q > 0 && u2 - u1 > 1e-9) L.push({ type:'udl', q:S.q, a:u1, b:u2 });
+  return L;
+}
+function clamp(v, lo, hi) { return Math.min(Math.max(v, lo), hi); }
+
+function update() {
+  const EI  = S.E * I_of();
+  const L   = S.L;
+  const loads = currentLoads();
+  const res = solveBeam(L, EI, S.support, loads);
+
+  // 读数
+  const wmm = Math.max(...Array.from(res.w)) * 1000;
+  const Mm  = Math.max(...Array.from(res.Ms).map(Math.abs));
+  const Vm  = Math.max(...Array.from(res.V).map(Math.abs));
+
+  // 面板显示
+  $('out-L').textContent = S.L.toFixed(2);
+  $('out-b').textContent = S.b;
+  $('out-h').textContent = S.h;
+  $('out-I').textContent = (I_of()*1e6).toFixed(1);
+  $('out-P').textContent = S.P;
+  $('out-a').textContent = (S.aFrac*S.L).toFixed(2);
+  $('out-q').textContent = S.q;
+  const u1 = Math.min(S.u1,S.u2)*S.L, u2 = Math.max(S.u1,S.u2)*S.L;
+  $('out-udl').textContent = (u2-u1 >= S.L-1e-6) ? '全长' : (u1.toFixed(1)+'–'+u2.toFixed(1)+' m');
+
+  // 绘图
+  const { data, layout } = buildFigure(res, L, S.support, loads.length ? loads : []);
+  Plotly.react('plot', data, layout, PLOT_CFG);
+
+  // 验证面板
+  renderVerify(res, wmm, Mm, Vm, S.E*I_of(), L);
+}
+
+function renderVerify(res, wmm, Mm, Vm, EI, L) {
+  const e = res.err;
+  const pct = e * 100;
+  const hasUDL = S.q > 0;
+
+  const rows = [];
+  const judge = (ok, txt) =>
+    ok ? `<span class="tag ok">✓ ${txt}</span>` : `<span class="tag warn">! ${txt}</span>`;
+
+  const tol = hasUDL ? 2e-3 : 1e-6;
+  const ok = e < tol;
+
+  rows.push(`<tr>
+    <td>M<sub>曲率</sub> vs M<sub>静力</sub></td>
+    <td class="num">—</td><td class="num">—</td>
+    <td class="num">${pct < 0.001 ? pct.toExponential(1) : pct.toFixed(4)} %</td>
+    <td>${judge(ok, ok ? '互验通过' : '偏差偏大')}</td></tr>`);
+
+  rows.push(`<tr>
+    <td>最大挠度 |w|<sub>max</sub></td>
+    <td class="num">${wmm.toFixed(4)} mm</td><td class="num">—</td>
+    <td class="num">—</td><td><span class="tag ok">✓ 已求解</span></td></tr>`);
+
+  rows.push(`<tr>
+    <td>最大弯矩 |M|<sub>max</sub></td>
+    <td class="num">${Mm.toFixed(2)} N·m</td><td class="num">—</td>
+    <td class="num">—</td><td><span class="tag ok">✓ 静力精确</span></td></tr>`);
+
+  rows.push(`<tr>
+    <td>最大剪力 |V|<sub>max</sub></td>
+    <td class="num">${Vm.toFixed(2)} N</td><td class="num">—</td>
+    <td class="num">—</td><td><span class="tag ok">✓ 静力精确</span></td></tr>`);
+
+  $('vbody').innerHTML = rows.join('');
+
+  const msg = hasUDL
+    ? `当前含分布荷载：有限元的位移场对分布荷载只有 O(h²) 精度，故互验偏差在 10⁻⁴ 量级——这正是教科书上的"网格收敛性"。集中荷载工况下节点解是精确的，偏差会落到 10⁻¹⁰。`
+    : `当前仅集中荷载：有限元对集中荷载是【节点精确】的，因此两条独立路径的偏差应接近机器精度。`;
+  $('vhint').textContent = msg;
+}
+
+/* ------------- 事件绑定 ------------- */
+$('btn-simple').onclick = () => setSupport('simple');
+$('btn-cant').onclick   = () => setSupport('cant');
+function setSupport(s) {
+  S.support = s;
+  $('btn-simple').setAttribute('aria-pressed', s === 'simple');
+  $('btn-cant').setAttribute('aria-pressed', s === 'cant');
+  update();
+}
+
+$('sel-mat').onchange = e => { S.E = parseFloat(e.target.value) * 1e9; update(); };
+
+const bind = (id, key, fn) => {
+  $(id).addEventListener('input', e => {
+    const v = parseFloat(e.target.value);
+    if (fn) fn(v); else S[key] = v;
+    update();
+  });
+};
+bind('rng-L', 'L');
+bind('rng-b', 'b');
+bind('rng-h', 'h');
+bind('rng-P', 'P');
+bind('rng-a', 'aFrac');
+bind('rng-q', 'q');
+bind('rng-u1', 'u1', v => { S.u1 = v; if (S.u1 > S.u2) { S.u2 = S.u1; $('rng-u2').value = String(S.u1); } });
+bind('rng-u2', 'u2', v => { S.u2 = v; if (S.u2 < S.u1) { S.u1 = S.u2; $('rng-u1').value = String(S.u2); } });
+
+update();
+</script>
+</body>
+</html>
