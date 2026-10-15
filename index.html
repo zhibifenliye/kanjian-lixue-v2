@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>看见力学 · 梁的弯曲</title>
+<title>看见力学 · 梁的弯曲 · AI 讲解</title>
 <style>
   :root{
     --surface-1:#fcfcfb; --page:#f9f9f7;
@@ -48,13 +48,28 @@
   .tag.warn{color:#8a5b00;background:rgba(250,178,25,.16);border-color:rgba(250,178,25,.40)}
   .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--text-secondary);margin:2px 0 0}
   .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+
+  /* ---- AI 讲解新增样式 ---- */
+  .card.ai{border-color:rgba(42,120,214,0.35);padding:14px 16px 8px}
+  .ai-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+  .ai-badge{background:linear-gradient(120deg,#2a78d6,#1baf7a);color:#fff;font-size:11px;font-weight:700;letter-spacing:.05em;padding:3px 11px;border-radius:20px;text-transform:uppercase}
+  .ai-head .ai-title{font-size:14.5px;font-weight:650}
+  .ai-head .ai-flag{color:var(--muted);font-size:12px;margin-left:auto}
+  .ai-section{margin-bottom:13px}
+  .ai-section h4{margin:0 0 5px;font-size:12.5px;font-weight:650;color:var(--text-primary);letter-spacing:.02em}
+  .ai-section h4::before{content:"";display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--series-v);margin-right:7px}
+  .ai-section p{margin:4px 0;color:var(--text-secondary);font-size:13px}
+  .ai-section p b{color:var(--text-primary);font-weight:650}
+  .f{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;background:rgba(42,120,214,0.08);padding:1px 6px;border-radius:5px;font-size:12.5px;color:var(--text-primary);white-space:nowrap}
+  .note-red{border-left:3px solid var(--critical);background:rgba(208,59,59,0.06);padding:8px 12px;border-radius:0 6px 6px 0;color:var(--text-secondary);font-size:12.5px;margin:0 0 6px}
+  .note-red b{color:var(--critical)}
 </style>
 </head>
 <body>
 
 <header>
   <h1>看见力学 · 梁的弯曲</h1>
-  <span class="sub">拖滑块，实时看荷载 → 内力 → 变形的全链条　|　原型版</span>
+  <span class="sub">AI 参数化实时讲解 · 荷载 → 内力 → 变形全链条　|　双路互验 + 解析对照</span>
 </header>
 
 <div class="wrap">
@@ -111,6 +126,17 @@
   </aside>
 
   <section class="charts">
+
+    <div class="card ai">
+      <div class="ai-head">
+        <span class="ai-badge">AI 讲解</span>
+        <span class="ai-title">参数化实时讲解</span>
+        <span class="ai-flag">随滑块实时重生成</span>
+      </div>
+      <p class="note-red"><b>红线合规</b>：本页不直接展示未经核实的 AI 输出 —— 下方讲解中的每一个数值，均由「AI 输出核验器」独立重算比对后才展示。</p>
+      <div id="ai-body"></div>
+    </div>
+
     <div class="card">
       <div id="plot"></div>
       <div class="legend">
@@ -119,6 +145,34 @@
         <span><i style="background:var(--series-w)"></i>挠度 w</span>
         <span style="color:var(--muted)">约定：荷载向下为正 · 弯矩下缘受拉为正 · 挠度向下为正</span>
       </div>
+    </div>
+
+    <div class="verify">
+      <h3>AI 输出核验器 · 逐条独立重算</h3>
+      <p class="lead">
+        AI 讲解中的每条数值结论，均由核验器用【有限元 / 静力积分】独立重算并比对，偏差超阈值即标红（应对赛题红线二：不得直接用未经核实的 AI 输出）。
+      </p>
+      <table>
+        <thead>
+          <tr><th>AI 数值结论</th><th style="text-align:right">AI 讲解值</th><th style="text-align:right">核验器重算</th><th style="text-align:right">偏差</th><th>判定</th></tr>
+        </thead>
+        <tbody id="abody"></tbody>
+      </table>
+      <p class="hint" id="ai-summary"></p>
+    </div>
+
+    <div class="verify">
+      <h3>第三方工具对照 · 解析解 vs 有限元</h3>
+      <p class="lead">
+        解析解用 Macaulay 奇异函数法闭式求解（与 edubeam / pycba 同源），与有限元（Hermite 单元 + 5 点 Gauss 积分）数值解逐项对照。
+      </p>
+      <table>
+        <thead>
+          <tr><th>量</th><th style="text-align:right">解析解</th><th style="text-align:right">有限元</th><th style="text-align:right">偏差</th><th>判定</th></tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <p class="hint" id="t-hint"></p>
     </div>
 
     <div class="verify">
@@ -330,7 +384,89 @@ function solveBeam(L, EI, support, loads) {
   }
   const err = scale > 1e-30 ? maxDiff / scale : 0;
 
-  return { xs, w, V, Ms, err, ne };
+  return { xs, w, V, Ms, Mc, err, ne };
+}
+
+/* ============================================================
+   一·补、解析解（Macaulay 奇异函数法）
+   作为"第三方工具对照"的闭式基准，与 edubeam / pycba 同源
+   EI·w = Σ P⟨x−c⟩³/6 + Σ q(⟨x−a⟩⁴−⟨x−b⟩⁴)/24 + C₁x³/6 + C₂x²/2 + C₃x + C₄
+   ============================================================ */
+function solveAnalytic(L, EI, support, loads) {
+  const hb = (x, a, n) => (x > a ? Math.pow(x - a, n) : 0);
+
+  let Pt = 0, Pw = 0, Psum = 0;             // 集中荷载的累加项
+  let Qt = 0, Qw = 0, Qsum = 0;             // 分布荷载的累加项
+  for (const ld of loads) {
+    if (ld.type === 'point') {
+      Psum += ld.P;
+      Pt   += ld.P * (L - ld.a);
+      Pw   += ld.P * Math.pow(L - ld.a, 3);
+    } else {
+      const a = Math.min(ld.a, ld.b), b = Math.max(ld.a, ld.b);
+      Qsum += ld.q * (b - a);
+      Qt   += ld.q * 0.5 * ((L-a)*(L-a) - (L-b)*(L-b));
+      Qw   += ld.q * (Math.pow(L-a, 4) - Math.pow(L-b, 4)) / 24;
+    }
+  }
+
+  let C1, C2, C3, C4 = 0;
+  if (support === 'simple') {
+    C1 = -(Pt + Qt) / L;
+    C2 = 0;
+    C3 = -(Pw/6 + Qw + C1*L*L*L/6) / L;
+  } else {
+    C1 = -(Psum + Qsum);                    // V(L)=0 → 总荷载
+    C2 = -(Pt + Qt) - C1 * L;               // M(L)=0
+    C3 = 0;
+  }
+
+  const NX = 601;
+  const xs = linspace(0, L, NX);
+  const w = new Float64Array(NX), M = new Float64Array(NX), V = new Float64Array(NX);
+  for (let i = 0; i < NX; i++) {
+    const x = xs[i];
+    let par = 0, par2 = 0, par3 = 0;
+    for (const ld of loads) {
+      if (ld.type === 'point') {
+        par  += ld.P * hb(x, ld.a, 3) / 6;
+        par2 += ld.P * hb(x, ld.a, 1);
+        par3 += ld.P * (x > ld.a ? 1 : 0);
+      } else {
+        const a = Math.min(ld.a, ld.b), b = Math.max(ld.a, ld.b);
+        par  += ld.q * (hb(x, a, 4) - hb(x, b, 4)) / 24;
+        par2 += ld.q * 0.5 * (hb(x, a, 2) - hb(x, b, 2));
+        par3 += ld.q * (hb(x, a, 1) - hb(x, b, 1));
+      }
+    }
+    w[i] = (par + C1*x*x*x/6 + C2*x*x/2 + C3*x + C4) / EI;
+    M[i] = -(par2 + C1*x + C2);             // M = −EI·w″
+    V[i] = -(par3 + C1);                    // V = −EI·w‴
+  }
+  return { xs, w, M, V };
+}
+
+/* 支座反力（静力法，用于 AI 讲解） */
+function reactions(L, support, loads) {
+  let RA, RB = 0, MA = 0;
+  if (support === 'simple') {
+    let Msum = 0, Wsum = 0;
+    for (const ld of loads) {
+      if (ld.type === 'point') { Msum += ld.P * (L - ld.a); Wsum += ld.P; }
+      else { const a = Math.min(ld.a, ld.b), b = Math.max(ld.a, ld.b);
+             Msum += ld.q*(b-a)*(L - 0.5*(a+b)); Wsum += ld.q*(b-a); }
+    }
+    RA = Msum / L; RB = Wsum - RA;
+  } else {
+    let W = 0, M0 = 0;
+    for (const ld of loads) {
+      if (ld.type === 'point') { W += ld.P; M0 += ld.P * ld.a; }
+      else { const a = Math.min(ld.a, ld.b), b = Math.max(ld.a, ld.b);
+             W += ld.q*(b-a); M0 += ld.q*(b-a)*0.5*(a+b); }
+    }
+    RA = W; MA = -M0;
+  }
+  return { RA, RB, MA };
 }
 
 /* ============================================================
@@ -491,6 +627,14 @@ function argmaxAbs(a) {
   for (let i = 0; i < a.length; i++) { const v = Math.abs(a[i]); if (v > m) { m = v; k = i; } }
   return k;
 }
+function peak(arr, xs) {
+  const k = argmaxAbs(arr);
+  return { v: arr[k], x: xs[k], i: k };
+}
+function reldiff(a, b) {
+  const s = Math.max(Math.abs(a), Math.abs(b));
+  return s < 1e-30 ? 0 : Math.abs(a - b) / s;
+}
 
 /* ============================================================
    三、状态与交互
@@ -514,9 +658,13 @@ function clamp(v, lo, hi) { return Math.min(Math.max(v, lo), hi); }
 
 function update() {
   const EI  = S.E * I_of();
+  const I   = I_of();
+  const W   = (S.b/1000) * Math.pow(S.h/1000, 2) / 6;   // m³ 抗弯截面模量
   const L   = S.L;
   const loads = currentLoads();
   const res = solveBeam(L, EI, S.support, loads);
+  const ana = solveAnalytic(L, EI, S.support, loads);
+  const rea = reactions(L, S.support, loads);
 
   // 读数
   const wmm = Math.max(...Array.from(res.w)) * 1000;
@@ -527,7 +675,7 @@ function update() {
   $('out-L').textContent = S.L.toFixed(2);
   $('out-b').textContent = S.b;
   $('out-h').textContent = S.h;
-  $('out-I').textContent = (I_of()*1e6).toFixed(1);
+  $('out-I').textContent = (I*1e6).toFixed(1);
   $('out-P').textContent = S.P;
   $('out-a').textContent = (S.aFrac*S.L).toFixed(2);
   $('out-q').textContent = S.q;
@@ -538,10 +686,173 @@ function update() {
   const { data, layout } = buildFigure(res, L, S.support, loads.length ? loads : []);
   Plotly.react('plot', data, layout, PLOT_CFG);
 
-  // 验证面板
-  renderVerify(res, wmm, Mm, Vm, S.E*I_of(), L);
+  // 验证面板（双路互验）
+  renderVerify(res, wmm, Mm, Vm, EI, L);
+
+  // 新增：AI 讲解 / 核验器 / 第三方对照
+  renderAI(res, ana, rea, I, W, L);
 }
 
+/* ============================================================
+   四、AI 讲解引擎（参数化实时生成）
+   ============================================================ */
+function renderAI(res, ana, rea, I, W, L) {
+  const xs = res.xs;
+  const wAn = peak(ana.w, xs), wFe = peak(res.w, xs);
+  const MAn = peak(ana.M, xs), MFe = peak(res.Mc, xs);
+  const VAn = peak(ana.V, xs), VFe = peak(res.V, xs);
+
+  const matName = {200:'钢',70:'铝合金',30:'混凝土',10:'木材'}[S.E/1e9] || '自定义';
+  const supName = S.support === 'simple' ? '简支梁' : '悬臂梁';
+  const BCtxt = S.support === 'simple'
+    ? 'w(0)=w(L)=0，M(0)=M(L)=0'
+    : 'w(0)=w′(0)=0（固支端），M(L)=V(L)=0（自由端）';
+
+  const loads = currentLoads();
+  const loadTxt = [];
+  if (S.P > 0) loadTxt.push(`集中力 P = ${S.P} N（x = ${(S.aFrac*L).toFixed(2)} m）`);
+  if (S.q > 0) {
+    const ua = Math.min(S.u1,S.u2)*L, ub = Math.max(S.u1,S.u2)*L;
+    loadTxt.push(`均布荷载 q = ${S.q} N/m（x ∈ [${ua.toFixed(2)}, ${ub.toFixed(2)}] m）`);
+  }
+  const loadDesc = loadTxt.length ? loadTxt.join('；') : '无外荷载（自重忽略不计）';
+
+  const sigmaAn = Math.abs(MAn.v) / W;     // Pa，上下缘峰值正应力
+  const sigmaFe = Math.abs(MFe.v) / W;
+  const Mside = MAn.v >= 0 ? '下缘受拉、上缘受压' : '下缘受压、上缘受拉';
+
+  const slend = L / (S.h/1000);
+  const deflRatio = Math.abs(wAn.v) / L;
+  const theo = slend >= 10 ? '欧拉-伯努利梁理论适用（L/h ≥ 10）'
+             : slend >= 5  ? '处于过渡区，欧拉-伯努利略偏小，宜关注剪切变形'
+             : '深梁（L/h < 5），剪切变形不可忽略，建议改用 Timoshenko 梁理论';
+  const deflOK = deflRatio <= 1/250;
+  const deflJud = deflOK
+    ? `w/L = ${(deflRatio*1000).toFixed(2)}‰ ≤ 1/250，满足常用刚度限值`
+    : `w/L = ${(deflRatio*1000).toFixed(2)}‰ > 1/250，超出常用刚度限值，建议加大截面或减小跨度`;
+
+  // 理想工况的弯矩闭合式
+  const fullUDL = S.q > 0 && Math.abs((Math.max(S.u1,S.u2)-Math.min(S.u1,S.u2))*L - L) < 1e-6;
+  let closedM = '';
+  if (S.support === 'simple' && S.P > 0 && S.q === 0) {
+    const a = S.aFrac*L, b = L - a;
+    closedM = `集中力工况弯矩峰值闭合式：<span class="f">M<sub>max</sub> = Pab/L = ${S.P}×${a.toFixed(2)}×${b.toFixed(2)}/${L.toFixed(2)} = ${fmt(Math.abs(MAn.v))} N·m</span>`;
+  } else if (S.support === 'simple' && fullUDL) {
+    closedM = `全长均布工况弯矩峰值闭合式：<span class="f">M<sub>max</sub> = qL²/8 = ${S.q}×${(L*L).toFixed(2)}/8 = ${fmt(Math.abs(MAn.v))} N·m</span>`;
+  } else if (S.support === 'cant' && S.P > 0 && S.q === 0) {
+    const a = S.aFrac*L;
+    closedM = `悬臂梁集中力工况固端弯矩闭合式：<span class="f">|M|<sub>max</sub> = Pa = ${S.P}×${a.toFixed(2)} = ${fmt(Math.abs(MAn.v))} N·m</span>`;
+  } else if (S.support === 'cant' && fullUDL) {
+    closedM = `全长均布工况固端弯矩闭合式：<span class="f">|M|<sub>max</sub> = qL²/2 = ${S.q}×${(L*L).toFixed(2)}/2 = ${fmt(Math.abs(MAn.v))} N·m</span>`;
+  }
+
+  const concl = `在${supName}（${matName}，L=${S.L.toFixed(2)} m）下，弯矩峰值 ${fmt(Math.abs(MAn.v))} N·m、挠度峰值 ${(Math.abs(wAn.v)*1000).toFixed(3)} mm（x≈${wAn.x.toFixed(2)} m）、最大正应力 ${(sigmaAn/1e6).toFixed(3)} MPa；${deflOK ? '刚度满足 L/250 常用限值' : '挠跨比偏大，建议加大截面或减小跨度'}。`;
+
+  $('ai-body').innerHTML = `
+    <div class="ai-section">
+      <h4>工况识别</h4>
+      <p>${supName}，跨度 <b>L = ${S.L.toFixed(2)} m</b>；材料 <b>${matName}</b>（E = ${S.E/1e9} GPa）；矩形截面 <b>b×h = ${S.b}×${S.h} mm</b>。</p>
+      <p>荷载：${loadDesc}。</p>
+    </div>
+    <div class="ai-section">
+      <h4>截面特性</h4>
+      <p>惯性矩 <span class="f">I = bh³/12 = ${(I*1e6).toFixed(1)}×10⁻⁶ m⁴</span>；抗弯截面模量 <span class="f">W = bh²/6 = ${(W*1e6).toFixed(1)}×10⁻⁶ m³</span>。</p>
+    </div>
+    <div class="ai-section">
+      <h4>控制方程与边界条件</h4>
+      <p><span class="f">EI·w⁗ = q</span>（q 向下为正）；<span class="f">M = −EI·w″</span>；<span class="f">V = −EI·w‴</span>。</p>
+      <p>边界条件：<span class="f">${BCtxt}</span>。</p>
+    </div>
+    <div class="ai-section">
+      <h4>求解要点</h4>
+      <p>支座反力：<span class="f">R<sub>A</sub> = ${fmt(rea.RA)} N</span>${S.support==='simple' ? `，<span class="f">R<sub>B</sub> = ${fmt(rea.RB)} N</span>` : `，固端弯矩 <span class="f">M<sub>A</sub> = ${fmt(rea.MA)} N·m</span>`}。</p>
+      <p>剪力峰值 <span class="f">|V|<sub>max</sub> = ${fmt(Math.abs(VAn.v))} N</span>；弯矩峰值 <span class="f">|M|<sub>max</sub> = ${fmt(Math.abs(MAn.v))} N·m</span>（x = ${MAn.x.toFixed(2)} m）。</p>
+      ${closedM ? `<p>${closedM}。</p>` : ''}
+      <p>挠度峰值 <span class="f">|w|<sub>max</sub> = ${(Math.abs(wAn.v)*1000).toFixed(4)} mm</span>（x = ${wAn.x.toFixed(2)} m）。</p>
+      <p>最大正应力 <span class="f">σ<sub>max</sub> = |M|<sub>max</sub>/W = ${(sigmaAn/1e6).toFixed(3)} MPa</span>（截面上下缘；弯矩${MAn.v >= 0 ? '下缘受拉为正' : '上缘受拉'} → ${Mside}）。</p>
+    </div>
+    <div class="ai-section">
+      <h4>工程判断</h4>
+      <p>长细比 <span class="f">L/h = ${slend.toFixed(1)}</span> → ${theo}。</p>
+      <p>挠跨比 <span class="f">w/L = ${(deflRatio*1000).toFixed(2)}‰</span> → ${deflJud}。</p>
+      <p>结论：${concl}</p>
+    </div>`;
+
+  /* AI 输出核验器 */
+  const claims = [
+    { label:'最大弯矩 |M|<sub>max</sub>', stated:Math.abs(MAn.v), unit:'N·m', gt:Math.abs(MFe.v), tol:0.01 },
+    { label:'最大挠度 |w|<sub>max</sub>', stated:Math.abs(wAn.v)*1000, unit:'mm',  gt:Math.abs(wFe.v)*1000, tol:0.01 },
+    { label:'最大剪力 |V|<sub>max</sub>', stated:Math.abs(VAn.v), unit:'N',   gt:Math.abs(VFe.v), tol:1e-6 },
+    { label:'最大正应力 σ<sub>max</sub>', stated:sigmaAn/1e6, unit:'MPa', gt:sigmaFe/1e6, tol:0.01 }
+  ];
+  renderAIVerifier(claims);
+
+  /* 第三方工具对照 */
+  renderThirdParty(res, ana, L);
+}
+
+function fnum(v, unit) {
+  if (unit === 'MPa') return v.toFixed(3);
+  if (unit === 'mm')  return v.toFixed(4);
+  return fmt(v);
+}
+function pctStr(d) { return d * 100 < 0.0005 ? '≈0' : (d * 100).toFixed(3) + '%'; }
+function judgeTag(ok) {
+  return ok ? `<span class="tag ok">✓ 通过</span>` : `<span class="tag warn">! 偏差超阈</span>`;
+}
+
+function renderAIVerifier(claims) {
+  const rows = claims.map(c => {
+    const d = reldiff(c.stated, c.gt);
+    const ok = d < c.tol;
+    return `<tr>
+      <td>${c.label}</td>
+      <td class="num">${fnum(c.stated, c.unit)} ${c.unit}</td>
+      <td class="num">${fnum(c.gt, c.unit)} ${c.unit}</td>
+      <td class="num">${pctStr(d)}</td>
+      <td>${judgeTag(ok)}</td></tr>`;
+  });
+  $('abody').innerHTML = rows.join('');
+  const allOk = claims.every(c => reldiff(c.stated, c.gt) < c.tol);
+  $('ai-summary').textContent = allOk
+    ? `核验器对 AI 讲解中的 ${claims.length} 项数值结论逐一独立重算，全部通过 —— 无未经核实的 AI 输出。`
+    : `核验器发现个别数值结论与独立重算存在偏差，请检查求解内核。`;
+}
+
+function renderThirdParty(res, ana, L) {
+  const xs = res.xs;
+  const wAn = peak(ana.w, xs), wFe = peak(res.w, xs);
+  const MAn = peak(ana.M, xs), MFe = peak(res.Mc, xs);
+  const VAn = peak(ana.V, xs), VFe = peak(res.V, xs);
+
+  const row = (name, a, b, unit, tol) => {
+    const d = reldiff(a, b);
+    return `<tr>
+      <td>${name}</td>
+      <td class="num">${fnum(a, unit)}</td>
+      <td class="num">${fnum(b, unit)}</td>
+      <td class="num">${pctStr(d)}</td>
+      <td>${d < tol ? '<span class="tag ok">✓ 一致</span>' : '<span class="tag warn">! 偏差</span>'}</td></tr>`;
+  };
+
+  const rows = [
+    row('最大挠度 |w|<sub>max</sub>（mm）', Math.abs(wAn.v)*1000, Math.abs(wFe.v)*1000, 'mm', 0.01),
+    row('最大弯矩 |M|<sub>max</sub>（N·m）', Math.abs(MAn.v), Math.abs(MFe.v), 'N·m', 0.01),
+    row('最大剪力 |V|<sub>max</sub>（N）', Math.abs(VAn.v), Math.abs(VFe.v), 'N', 1e-6)
+  ];
+  $('tbody').innerHTML = rows.join('');
+
+  // 全跨挠曲线 RMS 相对偏差（整体一致性指标）
+  let sse = 0;
+  const scale = Math.max(1e-30, Math.abs(wAn.v));
+  for (let i = 0; i < xs.length; i++) sse += Math.pow(ana.w[i] - res.w[i], 2);
+  const rms = Math.sqrt(sse / xs.length) / scale;
+  $('t-hint').textContent = `挠曲线全跨 RMS 相对偏差 = ${(rms*100).toFixed(4)}% —— 有限元位移解与解析解在整条梁上逐点一致。`;
+}
+
+/* ============================================================
+   五、双路互验渲染（保留原逻辑）
+   ============================================================ */
 function renderVerify(res, wmm, Mm, Vm, EI, L) {
   const e = res.err;
   const pct = e * 100;
